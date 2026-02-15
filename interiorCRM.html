@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Verdant CRM | Lead Management</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+        .emerald-gradient { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        .custom-scrollbar::-webkit-scrollbar { height: 4px; width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-slide { animation: slideIn 0.4s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-[#F8FAFC] text-[#1D1D1F]">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const G_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbztEixPQeXI30d6CuIF_sxQKz_h5ke0at29ZXXio4U_dZe8ToIQHDlB3u9oGiDsVwh7nw/exec";
+        const ADMIN_PASSWORD = "951";
+
+        const STATUS_OPTIONS = ["New", "Contacted", "In-Progress", "Converted", "Lost"];
+        const SERVICE_OPTIONS = ["Residential", "Commercial", "Renovation", "Consultation"];
+
+        const PhoneIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>;
+        const MessageIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>;
+        const EditIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+        const PlusIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+        const DownloadIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+        const LeafIcon = () => <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C10.9 14.36 12 15 12 18s-1.1 3.64-4.92 4c-3.23.36-5.08-1-5.08-4Z"/><path d="M11 20c1.33-1 2.5-3.5 2.5-6"/></svg>;
+
+        function App() {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [passInput, setPassInput] = useState("");
+            const [loginError, setLoginError] = useState(false);
+
+            const [leads, setLeads] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            
+            // Filters
+            const [serviceFilter, setServiceFilter] = useState("All");
+            const [statusFilter, setStatusFilter] = useState("All");
+            const [searchTerm, setSearchTerm] = useState("");
+
+            // Modals
+            const [editingLead, setEditingLead] = useState(null);
+            const [messagingLead, setMessagingLead] = useState(null);
+            const [addingLead, setAddingLead] = useState(false);
+            const [newLead, setNewLead] = useState({ name: '', phone: '', service: 'Residential', status: 'New', remarks: '' });
+            const [msgTemplate, setMsgTemplate] = useState("");
+
+            const fetchData = async () => {
+                setLoading(true);
+                try {
+                    const response = await fetch(`${G_SCRIPT_URL}?t=${Date.now()}`);
+                    const data = await response.json();
+                    setLeads(Array.isArray(data) ? data : []);
+                } catch (error) {
+                    setError("Sync error. Check script deployment.");
+                }
+                setLoading(false);
+            };
+
+            useEffect(() => { 
+                if (isAuthenticated) fetchData(); 
+            }, [isAuthenticated]);
+
+            const filteredLeads = useMemo(() => {
+                return leads.filter(l => {
+                    const matchesService = serviceFilter === "All" || l.service === serviceFilter;
+                    const matchesStatus = statusFilter === "All" || (l.status || "New") === statusFilter;
+                    const name = (l.name || "").toString().toLowerCase();
+                    const phone = (l.phone || "").toString();
+                    const matchesSearch = name.includes(searchTerm.toLowerCase()) || phone.includes(searchTerm);
+                    return matchesService && matchesStatus && matchesSearch;
+                }).reverse();
+            }, [leads, serviceFilter, statusFilter, searchTerm]);
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (passInput === ADMIN_PASSWORD) {
+                    setIsAuthenticated(true);
+                    setLoginError(false);
+                } else {
+                    setLoginError(true);
+                    setPassInput("");
+                }
+            };
+
+            const downloadCSV = () => {
+                const headers = ["Timestamp", "Name", "Phone", "Service", "Status", "Remarks"];
+                const csvRows = [headers.join(",")];
+                
+                filteredLeads.forEach(l => {
+                    const row = [
+                        l.timestamp || "",
+                        `"${(l.name || "").replace(/"/g, '""')}"`,
+                        l.phone || "",
+                        l.service || "",
+                        l.status || "New",
+                        `"${(l.remarks || "").replace(/"/g, '""')}"`
+                    ];
+                    csvRows.push(row.join(","));
+                });
+
+                const blob = new Blob([csvRows.join("\n")], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('hidden', '');
+                a.setAttribute('href', url);
+                a.setAttribute('download', `verdant_leads_${new Date().toLocaleDateString()}.csv`);
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            };
+
+            const updateLead = async (leadData) => {
+                setLoading(true);
+                try {
+                    await fetch(G_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({ action: 'update', ...leadData })
+                    });
+                    setTimeout(() => { fetchData(); setEditingLead(null); }, 1200);
+                } catch (error) {
+                    setLoading(false);
+                }
+            };
+
+            const addNewLead = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    await fetch(G_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({ ...newLead, action: 'create' })
+                    });
+                    setTimeout(() => { 
+                        fetchData(); 
+                        setAddingLead(false);
+                        setNewLead({ name: '', phone: '', service: 'Residential', status: 'New', remarks: '' });
+                    }, 1200);
+                } catch (error) {
+                    setLoading(false);
+                }
+            };
+
+            const calculateDaysPast = (timestamp) => {
+                if (!timestamp) return 0;
+                const created = new Date(timestamp);
+                const diff = new Date() - created;
+                return Math.floor(diff / (1000 * 60 * 60 * 24));
+            };
+
+            const sendWhatsApp = (lead, customMsg) => {
+                const url = `https://wa.me/${lead.phone}?text=${encodeURIComponent(customMsg)}`;
+                window.open(url, '_blank');
+                setMessagingLead(null);
+            };
+
+            const templates = [
+                { id: 1, name: "Intro", text: (name, service) => `Hi ${name}, thank you for reaching out to Verdant Interiors regarding ${service}! When would be a good time to connect for a quick 5-min briefing?` },
+                { id: 2, name: "Follow Up", text: (name, service) => `Hi ${name}, checking in to see if you had any more thoughts on the ${service} project we discussed? We'd love to help you bring your vision to life.` }
+            ];
+
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen max-w-md mx-auto bg-[#F8FAFC] flex items-center justify-center p-8">
+                        <div className="w-full space-y-8 text-center animate-slide">
+                            <div className="flex justify-center">
+                                <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-emerald-200">
+                                    <LeafIcon />
+                                </div>
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-black text-gray-900 tracking-tight">Verdant CRM</h1>
+                                <p className="text-gray-400 text-sm mt-2 font-medium">Please enter your access code</p>
+                            </div>
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <input 
+                                    autoFocus
+                                    type="password" 
+                                    className={`w-full bg-white border ${loginError ? 'border-red-400' : 'border-gray-100'} rounded-2xl py-4 px-6 text-center text-2xl font-bold tracking-[0.5em] outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm`}
+                                    placeholder="••••"
+                                    value={passInput}
+                                    onChange={(e) => {setPassInput(e.target.value); setLoginError(false);}}
+                                />
+                                {loginError && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest">Invalid Access Code</p>}
+                                <button type="submit" className="w-full emerald-gradient py-5 rounded-2xl text-white font-bold shadow-lg shadow-emerald-100 active:scale-95 transition-all">
+                                    Unlock Portal
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen max-w-md mx-auto bg-white shadow-xl relative pb-24 overflow-x-hidden">
+                    {/* Header */}
+                    <div className="emerald-gradient p-8 pb-20 text-white rounded-b-[3.5rem] shadow-lg relative z-0">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <p className="text-emerald-100 text-[10px] font-bold uppercase tracking-widest mb-1">Lead Center</p>
+                                <h1 className="text-3xl font-black tracking-tight">Verdant CRM</h1>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={downloadCSV} className="bg-white/20 p-3 rounded-2xl hover:bg-white/30 transition-all active:scale-90" title="Export CSV">
+                                    <DownloadIcon />
+                                </button>
+                                <button onClick={() => setAddingLead(true)} className="bg-white/20 p-3 rounded-2xl hover:bg-white/30 transition-all active:scale-90">
+                                    <PlusIcon />
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <input 
+                                type="text" 
+                                placeholder="Search leads..." 
+                                className="w-full bg-white/10 border-none rounded-2xl py-4 px-6 text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-white/30 transition-all backdrop-blur-md"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                            
+                            {/* Filter Sets */}
+                            <div className="space-y-2">
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+                                    <span className="text-[9px] font-bold uppercase text-white/40 self-center mr-1">Service</span>
+                                    {["All", ...SERVICE_OPTIONS].map(opt => (
+                                        <button key={opt} onClick={() => setServiceFilter(opt)}
+                                            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${serviceFilter === opt ? 'bg-white text-emerald-800 shadow-lg' : 'bg-white/10 text-white'}`}>
+                                            {opt}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+                                    <span className="text-[9px] font-bold uppercase text-white/40 self-center mr-1">Status</span>
+                                    {["All", ...STATUS_OPTIONS].map(opt => (
+                                        <button key={opt} onClick={() => setStatusFilter(opt)}
+                                            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${statusFilter === opt ? 'bg-white text-emerald-800 shadow-lg' : 'bg-white/10 text-white'}`}>
+                                            {opt}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Leads Feed */}
+                    <div className="px-6 -mt-10 relative z-10 space-y-4 pb-12">
+                        {loading && leads.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 gap-4">
+                                <div className="w-8 h-8 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
+                                <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-widest">Refreshing Data...</p>
+                            </div>
+                        ) : filteredLeads.length === 0 ? (
+                            <div className="text-center py-20 text-gray-400">
+                                <p className="font-medium">No leads found matching filters.</p>
+                            </div>
+                        ) : filteredLeads.map((lead, i) => (
+                            <div key={i} className="bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-sm animate-slide border-l-4 border-l-emerald-500">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <h3 className="font-bold text-gray-900 leading-tight">{lead.name || "Referral"}</h3>
+                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">{lead.service}</p>
+                                    </div>
+                                    <div className="flex flex-col items-end">
+                                        <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider ${
+                                            (lead.status || "New") === "New" ? "bg-emerald-50 text-emerald-600" :
+                                            lead.status === "Converted" ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-400"
+                                        }`}>
+                                            {lead.status || "New"}
+                                        </span>
+                                        <span className="text-[8px] text-red-400 font-bold mt-1 uppercase">
+                                            {calculateDaysPast(lead.timestamp)} Days Old
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <p className="text-[11px] text-gray-500 italic mb-4 line-clamp-2">
+                                    {(lead.remarks && lead.remarks !== "") ? lead.remarks : "No notes yet..."}
+                                </p>
+
+                                <div className="flex gap-2 pt-2 border-t border-gray-50">
+                                    <a href={`tel:${lead.phone}`} className="flex-1 bg-gray-50 text-gray-600 py-2 rounded-2xl flex items-center justify-center active:scale-95 transition-all">
+                                        <PhoneIcon />
+                                    </a>
+                                    <button onClick={() => setMessagingLead(lead)} className="flex-1 bg-emerald-50 text-emerald-600 py-2 rounded-2xl flex items-center justify-center active:scale-95 transition-all">
+                                        <MessageIcon />
+                                    </button>
+                                    <button onClick={() => setEditingLead({...lead})} className="flex-1 bg-gray-900 text-white py-2 rounded-2xl flex items-center justify-center active:scale-95 transition-all">
+                                        <EditIcon />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Edit Lead Modal */}
+                    {editingLead && (
+                        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end">
+                            <div className="bg-white w-full max-w-md mx-auto rounded-t-[3rem] p-8 shadow-2xl animate-slide">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black">Manage Lead</h2>
+                                    <button onClick={() => setEditingLead(null)} className="text-gray-300 text-3xl font-light">&times;</button>
+                                </div>
+                                
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-[9px] font-bold uppercase text-gray-400 ml-1 tracking-widest">Update Status</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {STATUS_OPTIONS.map(opt => (
+                                                <button key={opt} onClick={() => setEditingLead({...editingLead, status: opt})}
+                                                    className={`py-2 rounded-xl text-[9px] font-bold border transition-all ${editingLead.status === opt ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg' : 'bg-gray-50 border-gray-100 text-gray-400'}`}>
+                                                    {opt}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[9px] font-bold uppercase text-gray-400 ml-1 tracking-widest">Internal Remarks</label>
+                                        <textarea className="w-full bg-gray-50 rounded-2xl p-4 text-xs border-none outline-none focus:ring-2 focus:ring-emerald-500 min-h-[100px]"
+                                            value={editingLead.remarks || ""} onChange={(e) => setEditingLead({...editingLead, remarks: e.target.value})} />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[9px] font-bold uppercase text-gray-400 ml-1 tracking-widest">Days Past Lead (Locked)</label>
+                                        <input type="text" disabled className="w-full bg-gray-100 rounded-2xl p-4 text-xs border-none text-gray-400 cursor-not-allowed"
+                                            value={`${calculateDaysPast(editingLead.timestamp)} days since creation`} />
+                                    </div>
+
+                                    <button onClick={() => updateLead(editingLead)} disabled={loading}
+                                        className="w-full emerald-gradient py-5 rounded-[2rem] text-white font-bold shadow-xl shadow-emerald-100 active:scale-95 transition-all">
+                                        {loading ? "Syncing..." : "Update Details"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Referral Modal */}
+                    {addingLead && (
+                        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end">
+                            <form onSubmit={addNewLead} className="bg-white w-full max-w-md mx-auto rounded-t-[3rem] p-8 shadow-2xl animate-slide space-y-5">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h2 className="text-2xl font-black">New Referral</h2>
+                                    <button type="button" onClick={() => setAddingLead(false)} className="text-gray-300 text-3xl font-light">&times;</button>
+                                </div>
+
+                                <input required type="text" placeholder="Full Name" className="w-full bg-gray-50 rounded-2xl p-4 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                                    value={newLead.name} onChange={e => setNewLead({...newLead, name: e.target.value})} />
+                                
+                                <input required type="tel" placeholder="Phone Number" className="w-full bg-gray-50 rounded-2xl p-4 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                                    value={newLead.phone} onChange={e => setNewLead({...newLead, phone: e.target.value})} />
+
+                                <div className="space-y-2">
+                                    <label className="text-[9px] font-bold uppercase text-gray-400 ml-1">Service Type</label>
+                                    <select className="w-full bg-gray-50 rounded-2xl p-4 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                                        value={newLead.service} onChange={e => setNewLead({...newLead, service: e.target.value})}>
+                                        {SERVICE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+
+                                <textarea placeholder="Initial Remarks" className="w-full bg-gray-50 rounded-2xl p-4 text-xs outline-none focus:ring-2 focus:ring-emerald-500 min-h-[80px]"
+                                    value={newLead.remarks} onChange={e => setNewLead({...newLead, remarks: e.target.value})} />
+
+                                <button type="submit" disabled={loading} className="w-full emerald-gradient py-5 rounded-[2rem] text-white font-bold shadow-xl active:scale-95 transition-all">
+                                    {loading ? "Adding..." : "Add to Database"}
+                                </button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* WhatsApp Modal */}
+                    {messagingLead && (
+                        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end">
+                            <div className="bg-white w-full max-w-md mx-auto rounded-t-[3rem] p-8 shadow-2xl animate-slide">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black">Quick Message</h2>
+                                    <button onClick={() => setMessagingLead(null)} className="text-gray-300 text-3xl font-light">&times;</button>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex gap-2">
+                                        {templates.map(t => (
+                                            <button key={t.id} onClick={() => setMsgTemplate(t.text(messagingLead.name, messagingLead.service))}
+                                                className="flex-1 py-3 rounded-2xl bg-gray-50 text-[10px] font-bold border hover:border-emerald-200 transition-all">
+                                                {t.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <textarea className="w-full bg-emerald-50/50 rounded-2xl p-4 text-xs min-h-[120px] outline-none"
+                                        value={msgTemplate} onChange={e => setMsgTemplate(e.target.value)} />
+                                    <button onClick={() => sendWhatsApp(messagingLead, msgTemplate)} disabled={!msgTemplate}
+                                        className="w-full bg-[#25D366] py-5 rounded-[2rem] text-white font-bold flex items-center justify-center gap-2 active:scale-95 transition-all">
+                                        <MessageIcon /> Launch WhatsApp
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Navbar */}
+                    <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto h-20 glass border-t border-gray-100 flex items-center justify-around px-8 rounded-t-[2.5rem] shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-[90]">
+                        <div className="text-emerald-600 flex flex-col items-center">
+                            <div className="w-5 h-1 bg-emerald-600 rounded-full mb-2"></div>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                        </div>
+                        <div 
+                            className="text-gray-400 flex flex-col items-center pt-3 cursor-pointer hover:text-emerald-600 transition-colors active:scale-90"
+                            onClick={() => setAddingLead(true)}
+                        >
+                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+                        </div>
+                        <div className="text-gray-300 flex flex-col items-center pt-3 group">
+                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<App />);
+    </script>
+</body>
+</html>
